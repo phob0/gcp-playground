@@ -1,0 +1,149 @@
+swagger: "2.0"
+info:
+  title: hello-world-api
+  version: 1.0.0
+consumes:
+  - application/json
+produces:
+  - application/json
+paths:
+  /hello:
+    get:
+      summary: Returns a greeting.
+      operationId: greet
+      x-google-backend:
+        address: https://us-central1-todo-poc-5ff7d.cloudfunctions.net/helloWorld
+      responses:
+        "200":
+          description: A successful response
+          schema:
+            type: string
+  /messages:
+    get:
+      summary: Lists all messages with pagination.
+      operationId: listMessages
+      x-google-backend:
+        address: https://us-central1-todo-poc-5ff7d.cloudfunctions.net/listMessages
+      parameters:
+        - in: query
+          name: pageToken
+          type: string
+          required: false
+          description: The token for the next page of results.
+      responses:
+        "200":
+          description: A list of messages with pagination information.
+          schema:
+            type: object
+            properties:
+              messages:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    message:
+                      type: string
+              nextPageToken:
+                type: string
+                description: A token for retrieving the next page of results.
+        "500":
+          description: Internal server error.
+    post:
+      summary: Creates a new message.
+      operationId: createMessage
+      x-google-backend:
+        address: https://us-central1-todo-poc-5ff7d.cloudfunctions.net/createMessage
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+            required:
+              - message
+      responses:
+        "201":
+          description: Message created successfully.
+        "400":
+          description: Bad request (e.g., missing message).
+        "500":
+          description: Internal server error.
+  /messages/{messageId}:
+    get:
+      summary: Retrieves a specific message by ID.
+      operationId: getMessageById
+      x-google-backend:
+        address: https://us-central1-todo-poc-5ff7d.cloudfunctions.net/getMessageById
+      parameters:
+        - in: path
+          name: messageId
+          type: string
+          required: true
+          description: The ID of the message to retrieve.
+      responses:
+        "200":
+          description: The requested message.
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+              message:
+                type: string
+        "404":
+          description: Message not found.
+        "500":
+          description: Internal server error.
+    patch:
+      summary: Updates a specific message by ID.
+      operationId: updateMessageById
+      x-google-backend:
+        address: https://us-central1-todo-poc-5ff7d.cloudfunctions.net/updateMessageById
+      parameters:
+        - in: path
+          name: messageId
+          type: string
+          required: true
+          description: The ID of the message to update.
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+            required:
+              - message
+      responses:
+        "200":
+          description: Message updated successfully.
+        "400":
+          description: Bad request (e.g., invalid input).
+        "404":
+          description: Message not found.
+        "500":
+          description: Internal server error.
+    delete:
+      summary: Deletes a specific message by ID.
+      operationId: deleteMessageById
+      x-google-backend:
+        address: https://us-central1-todo-poc-5ff7d.cloudfunctions.net/deleteMessageById
+      parameters:
+        - in: path
+          name: messageId
+          type: string
+          required: true
+          description: The ID of the message to delete.
+      responses:
+        "200":
+          description: Message deleted successfully.
+        "404":
+          description: Message not found.
+        "500":
+          description: Internal server error.
