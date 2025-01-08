@@ -26,10 +26,15 @@ paths:
         address: https://us-central1-todo-poc-5ff7d.cloudfunctions.net/listMessages
       parameters:
         - in: query
-          name: pageToken
+          name: nextPageToken
           type: string
           required: false
           description: The token for the next page of results.
+        - in: query
+          name: previousPageToken
+          type: string
+          required: false
+          description: The token for the previous page of results.
       responses:
         "200":
           description: A list of messages with pagination information.
@@ -43,11 +48,22 @@ paths:
                   properties:
                     id:
                       type: string
+                      description: The unique identifier for the message.
                     message:
                       type: string
+                      description: The content of the message.
               nextPageToken:
                 type: string
-                description: A token for retrieving the next page of results.
+                description: A token for retrieving the next page of results. Will be null if there are no more results.
+              previousPageToken:
+                type: string
+                description: A token for retrieving the previous page of results. Will be null for the first page.
+              totalMessages:
+                type: integer
+                description: The total number of messages in the collection.
+              currentPage:
+                type: integer
+                description: The number of messages returned in the current page.
         "500":
           description: Internal server error.
     post:
