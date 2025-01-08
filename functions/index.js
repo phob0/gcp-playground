@@ -1,4 +1,5 @@
 const functions = require("firebase-functions");
+const { onDocumentCreated, onDocumentDeleted } = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 admin.initializeApp();
 const db = admin.firestore();
@@ -15,36 +16,24 @@ exports.createMessage = functions.https.onRequest(async (req, res) => {
       return res.status(400).send({ error: "Message is required." });
     }
 
-    const docRef = await db.collection("messages").add({ message: messageData.message }); // Get the DocumentReference
+    // Add the message with timestamps
+    const timestamp = new Date().toISOString();
+    const docRef = await db.collection("messages").add({
+      message: messageData.message,
+      created_at: timestamp,
+      updated_at: timestamp,
+    });
 
-    const messageDoc = await docRef.get(); //Retrieve the document
+    // Retrieve the newly created document
+    const messageDoc = await docRef.get();
     const createdMessage = messageDoc.data();
 
-    res.status(201).json({ message: "Message created successfully.", data: { id: docRef.id, ...createdMessage } }); // Send the ID and data
+    res.status(201).json({
+      message: "Message created successfully.",
+      data: { id: docRef.id, ...createdMessage },
+    });
   } catch (error) {
     console.error("Error creating message:", error);
-    res.status(500).send({ error: "Internal server error." });
-  }
-});
-
-exports.getMessageById = functions.https.onRequest(async (req, res) => {
-  try {
-    const messageId = req.query.messageId; // Get the message ID from the URL path
-
-    if (!messageId) {
-        return res.status(400).send({ error: "Message ID is required." });
-    }
-
-    const messageDoc = await db.collection("messages").doc(messageId).get();
-
-    if (!messageDoc.exists) {
-      return res.status(404).send({ error: "Message not found." });
-    }
-
-    const messageData = messageDoc.data();
-    res.status(200).json(messageData); // Send the message data as JSON
-  } catch (error) {
-    console.error("Error getting message:", error);
     res.status(500).send({ error: "Internal server error." });
   }
 });
@@ -69,15 +58,45 @@ exports.updateMessageById = functions.https.onRequest(async (req, res) => {
       return res.status(404).send({ error: "Message not found." });
     }
 
-    await messageDocRef.update(updateData); // Update the document
+    // Add the updated_at timestamp
+    updateData.updated_at = new Date().toISOString();
+
+    // Update the document
+    await messageDocRef.update(updateData);
 
     // Get the updated document
     const updatedMessageDoc = await messageDocRef.get();
     const updatedMessageData = updatedMessageDoc.data();
 
-    res.status(200).json({ message: "Message updated successfully.", data: updatedMessageData }); // Return updated data
+    res.status(200).json({
+      message: "Message updated successfully.",
+      data: updatedMessageData,
+    });
   } catch (error) {
     console.error("Error updating message:", error);
+    res.status(500).send({ error: "Internal server error." });
+  }
+});
+
+
+exports.getMessageById = functions.https.onRequest(async (req, res) => {
+  try {
+    const messageId = req.query.messageId; // Get the message ID from the URL path
+
+    if (!messageId) {
+        return res.status(400).send({ error: "Message ID is required." });
+    }
+
+    const messageDoc = await db.collection("messages").doc(messageId).get();
+
+    if (!messageDoc.exists) {
+      return res.status(404).send({ error: "Message not found." });
+    }
+
+    const messageData = messageDoc.data();
+    res.status(200).json(messageData); // Send the message data as JSON
+  } catch (error) {
+    console.error("Error getting message:", error);
     res.status(500).send({ error: "Internal server error." });
   }
 });
@@ -85,17 +104,18 @@ exports.updateMessageById = functions.https.onRequest(async (req, res) => {
 exports.listMessages = functions.https.onRequest(async (req, res) => {
   try {
     const pageSize = 10;
-    const pageToken = req.query.pageToken;
-    const previousPageToken = req.query.previousPageToken; // Get previous page token
+    const pageToken = req.query.pageToken || null; // Current page token
+    const previousPageToken = req.query.previousPageToken || null; // Previous page token from request
 
     const counterDoc = await db.collection("counters").doc("messages").get();
     const totalMessages = counterDoc.exists ? counterDoc.data().count : 0;
 
     let query = db.collection("messages").orderBy("__name__").limit(pageSize);
+
     if (pageToken) {
       query = query.startAfter(pageToken);
-    } else if (previousPageToken){
-        query = query.endBefore(previousPageToken).limitToLast(pageSize);
+    } else if (previousPageToken) {
+      query = query.endBefore(previousPageToken).limitToLast(pageSize);
     }
 
     const snapshot = await query.get();
@@ -105,17 +125,17 @@ exports.listMessages = functions.https.onRequest(async (req, res) => {
     });
 
     const firstDoc = snapshot.docs[0];
-    const newPreviousPageToken = firstDoc ? firstDoc.id : null;
+    const newPreviousPageToken = pageToken ? (firstDoc ? firstDoc.id : null) : null;
 
     const lastDoc = snapshot.docs[snapshot.docs.length - 1];
     const nextPageToken = lastDoc ? lastDoc.id : null;
 
     res.status(200).json({
-        messages,
-        nextPageToken,
-        previousPageToken: newPreviousPageToken,
-        totalMessages,
-        currentPage: snapshot.docs.length
+      messages,
+      nextPageToken,
+      previousPageToken: newPreviousPageToken,
+      totalMessages,
+      currentPageSize: messages.length,
     });
   } catch (error) {
     console.error("Error listing messages:", error);
@@ -147,30 +167,37 @@ exports.deleteMessageById = functions.https.onRequest(async (req, res) => {
 });
 
 // Firestore Triggers (for maintaining the counter)
-exports.incrementMessageCount = functions.firestore
-    .document('messages/{messageId}')
-    .onCreate(async (snap, context) => {
-        const counterRef = db.collection('counters').doc('messages');
-        return db.runTransaction(async (transaction) => {
-            const counterDoc = await transaction.get(counterRef);
-            let newCount = 1;
-            if (counterDoc.exists) {
-                newCount = counterDoc.data().count + 1;
-            }
-            transaction.set(counterRef, { count: newCount });
-        });
-    });
 
-exports.decrementMessageCount = functions.firestore
-    .document('messages/{messageId}')
-    .onDelete(async (snap, context) => {
-        const counterRef = db.collection('counters').doc('messages');
-        return db.runTransaction(async (transaction) => {
-            const counterDoc = await transaction.get(counterRef);
-            let newCount = 0;
-            if (counterDoc.exists) {
-                newCount = Math.max(0, counterDoc.data().count - 1);
-            }
-            transaction.set(counterRef, { count: newCount });
-        });
+// Increment message count on document creation
+exports.incrementMessageCount = onDocumentCreated("messages/{messageId}", async (event) => {
+  const counterRef = db.collection("counters").doc("messages");
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const counterDoc = await transaction.get(counterRef);
+      const currentCount = counterDoc.exists ? counterDoc.data().count : 0;
+      const newCount = currentCount + 1;
+      transaction.set(counterRef, { count: newCount });
     });
+    console.log("Message count incremented.");
+  } catch (error) {
+    console.error("Error incrementing message count:", error);
+  }
+});
+
+// Decrement message count on document deletion
+exports.decrementMessageCount = onDocumentDeleted("messages/{messageId}", async (event) => {
+  const counterRef = db.collection("counters").doc("messages");
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const counterDoc = await transaction.get(counterRef);
+      const currentCount = counterDoc.exists ? counterDoc.data().count : 0;
+      const newCount = Math.max(0, currentCount - 1);
+      transaction.set(counterRef, { count: newCount });
+    });
+    console.log("Message count decremented.");
+  } catch (error) {
+    console.error("Error decrementing message count:", error);
+  }
+});
